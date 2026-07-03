@@ -1,47 +1,48 @@
 # azure-appgw-webserver
 
-2 VMs con Nginx, una en `snet-app-az1` y otra en `snet-app-az2`
-(proyecto `azure-virtual-network`), expuestas a Internet a traves de
-un Azure Application Gateway (Capa 7) publico, repartido entre las 3
-AZs.
+2 Nginx VMs, one in `snet-app-az1` and one in `snet-app-az2` (from
+the `azure-virtual-network` project), exposed to the Internet through
+a public Azure Application Gateway (Layer 7). The Gateway itself
+spans all 3 AZs (`zones = [1, 2, 3]`); the backend VMs currently live
+in 2 of those AZs.
 
-## Arquitectura
+## Architecture
 
 ```
 Internet
    |
    v
 [Public IP + Application Gateway v2]  <- zones=[1,2,3], subnet: snet-appgw
-   |  (Listener HTTP:80 -> Routing Rule -> Backend Pool)
+   |  (HTTP:80 Listener -> Routing Rule -> Backend Pool)
    |
-   +--> VM 1 - Nginx en snet-app-az1 (zone 1) - "Soy la instancia 1"
+   +--> VM 1 - Nginx in snet-app-az1 (10.0.11.x) - "I am instance 1"
    |
-   +--> VM 2 - Nginx en snet-app-az2 (zone 2) - "Soy la instancia 2"
+   +--> VM 2 - Nginx in snet-app-az2 (10.0.12.x) - "I am instance 2"
 ```
 
-Cada VM sirve una pagina HTML distinta ("Soy la instancia 1" / "Soy
-la instancia 2", con su zona y hostname) para poder confirmar
-visualmente que el Application Gateway esta repartiendo trafico
-entre ambas al refrescar el navegador o hacer varios `curl`.
+Each VM serves a distinct HTML page ("I am instance 1" / "I am
+instance 2", plus its zone and hostname) to visually confirm the
+Application Gateway is distributing traffic across both when
+refreshing the browser or running multiple `curl` requests.
 
-## Pre-requisitos
+## Prerequisites
 
-Antes de este repo, `azure-virtual-network` debe tener aplicados los
-parches que agregan:
-- `snet-appgw` (subnet dedicada del Application Gateway)
-- `nsg-appgw` (su NSG)
-- La regla en `nsg-private` que permite HTTP:80 desde `snet-appgw`
+`azure-virtual-network` must already have these applied:
+- `snet-appgw` - dedicated subnet for the Application Gateway
+- `nsg-appgw` - its NSG
+- A rule in `nsg-private` allowing HTTP:80 from `snet-appgw`
 
-## Datos reales del proyecto
+## Project data
 
-| Recurso | Valor |
+| Resource | Value |
 |---|---|
 | Resource Group | `johan` |
 | VNet | `vnet-ha` (`10.0.0.0/16`) |
-| App subnets usadas | `snet-app-az1` (`10.0.11.0/24`), `snet-app-az2` (`10.0.12.0/24`) |
-| Subnet Application Gateway | `snet-appgw` (`10.0.40.0/24`, creada en `azure-virtual-network`) |
+| App subnets used | `snet-app-az1` (`10.0.11.0/24`), `snet-app-az2` (`10.0.12.0/24`) |
+| Application Gateway subnet | `snet-appgw` (`10.0.40.0/24`, created in `azure-virtual-network`) |
+| VM size | `Standard_D2s_v3` (same as jumpbox - reliable zonal capacity in `centralus`) |
 
-## Uso
+## Usage
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
@@ -50,42 +51,73 @@ terraform plan
 terraform apply
 ```
 
-## Habilitar WAF
+## HTTP only, no TLS yet
 
-Por defecto SKU `Standard_v2`. Para `WAF_v2` con reglas OWASP:
+The listener is `Http` on port 80 - no certificate or public domain
+configured yet. The Application Gateway resource still requires an
+explicit `ssl_policy` block (Azure rejects the provider's old
+default TLS policy), even with no HTTPS listener in use:
+
+```hcl
+ssl_policy {
+  policy_type = "Predefined"
+  policy_name = "AppGwSslPolicy20220101"
+}
+```
+
+This only satisfies the platform requirement for the gateway engine
+itself; it has no effect on the current HTTP-only traffic. It will
+matter once a certificate and HTTPS listener are added.
+
+## Enable WAF
+
+Default SKU is `Standard_v2`. For `WAF_v2` with OWASP rules:
 
 ```hcl
 enable_waf = true
 ```
 
-## Prueba de balanceo
+## Test load balancing
 
 ```bash
-# Correr varias veces - deberia alternar entre instancia 1 y 2
 for i in 1 2 3 4 5 6; do
-  curl -s http://$(terraform output -raw application_gateway_public_ip) | grep "Soy la"
+  curl -s http://$(terraform output -raw application_gateway_public_ip) | grep "I am"
 done
 ```
 
-Nota: Application Gateway no tiene "round robin puro" configurable
-como Load Balancer - reparte segun disponibilidad y salud de las
-instancias del backend pool, asi que en pocas requests deberias ver
-ambas apareciendo.
+Application Gateway doesn't do strict round-robin like a Load
+Balancer - it distributes based on backend health and availability,
+so both instances should show up within a few requests.
 
-## Escalar a mas instancias
+## How traffic reaches the backend from the Internet
 
-Subir `web_instance_count` y agregar el nombre de subnet
-correspondiente a `app_subnet_names` (ej. `snet-app-az3` para una
-tercera instancia).
+```
+curl/browser -> Public IP (Application Gateway frontend, port 80)
+             -> Listener + Routing Rule
+             -> new connection to a healthy backend pool IP (10.0.11.x / 10.0.12.x)
+             -> Nginx responds
+```
 
-## Archivos
+The Application Gateway acts as a proxy: your connection terminates
+at the gateway, which opens a separate connection to the chosen
+backend VM over the private VNet. The VMs have no public IP and are
+unreachable directly from the Internet - `nsg-private` only allows
+inbound HTTP:80 from the `snet-appgw` CIDR. The health probe (`GET /`
+every 30s) determines which backend IPs are eligible for traffic.
 
-| Archivo | Contenido |
+## Scaling to more instances
+
+Increase `web_instance_count` and add the matching subnet name to
+`app_subnet_names` (e.g. `snet-app-az3` for a third instance).
+
+## Files
+
+| File | Contents |
 |---|---|
-| `providers.tf` | Provider AzureRM |
-| `variables.tf` | Variables, incluye `web_instance_count` y `app_subnet_names` |
-| `data.tf` | Referencias a RG/VNet/subnets existentes (app x N + appgw) |
-| `webserver.tf` | NICs + VMs Nginx, una por AZ, HTML identificable por instancia |
-| `application_gateway.tf` | Application Gateway con `zones=[1,2,3]` y backend pool dinamico |
-| `outputs.tf` | IP publica del gateway, IPs y nombres de las VMs |
-| `terraform.tfvars.example` | Valores reales listos para copiar |
+| `providers.tf` | AzureRM provider |
+| `variables.tf` | Variables, including `web_instance_count` and `app_subnet_names` |
+| `data.tf` | References to existing RG/VNet/subnets (app x N + appgw) |
+| `webserver.tf` | NICs + Nginx VMs, one per AZ, instance-identifiable HTML |
+| `application_gateway.tf` | Application Gateway with `zones=[1,2,3]` and dynamic backend pool |
+| `outputs.tf` | Gateway public IP, VM IPs and names |
+| `terraform.tfvars.example` | Ready-to-copy real values |
