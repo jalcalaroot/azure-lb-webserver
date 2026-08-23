@@ -14,9 +14,9 @@ resource "azurerm_application_gateway" "appgw" {
   location            = var.location
   tags                = var.tags
 
-  # Reparte las instancias del Application Gateway entre las 3 AZs.
-  # Todas viven en la misma subnet (snet-appgw) - Azure gestiona
-  # internamente en que zona fisica cae cada instancia.
+  # Spreads the Application Gateway's instances across the 3 AZs.
+  # They all live in the same subnet (snet-appgw) - Azure manages
+  # internally which physical zone each instance lands in.
   zones = ["1", "2", "3"]
 
   sku {
@@ -38,7 +38,7 @@ resource "azurerm_application_gateway" "appgw" {
   ssl_policy {
     policy_type = "Predefined"
     policy_name = "AppGwSslPolicy20220101"
-  } 
+  }
 
   gateway_ip_configuration {
     name      = "appgw-ip-config"

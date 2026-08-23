@@ -1,65 +1,70 @@
-variable "resource_group_name" {
-  description = "Resource Group existente donde vive vnet-ha"
+variable "subscription_id" {
+  description = "Azure subscription ID - required explicitly by the azurerm provider >= 4.0. No default on purpose: pass it via -var, a gitignored .tfvars, or the TF_VAR_subscription_id environment variable"
   type        = string
-  default     = "johan"
+}
+
+variable "resource_group_name" {
+  description = "Existing resource group where the network project (azure-virtual-network) lives"
+  type        = string
+  default     = "rg-network"
 }
 
 variable "location" {
-  description = "Region de Azure"
+  description = "Azure region"
   type        = string
   default     = "centralus"
 }
 
 variable "vnet_name" {
-  description = "Nombre del VNet existente"
+  description = "Name of the existing VNet"
   type        = string
   default     = "vnet-ha"
 }
 
-variable "app_subnet_names" {
-  description = "Lista de app subnets existentes, una por instancia (VM 1 -> az1, VM 2 -> az2, etc.)"
-  type        = list(string)
-  default     = ["snet-app-az1", "snet-app-az2"]
+variable "app_subnet_name" {
+  description = "Existing app subnet shared by all webserver instances (regional, not per-AZ - HA comes from the VM zone assignment, not from separate subnets)"
+  type        = string
+  default     = "snet-app"
 }
 
 variable "web_instance_count" {
-  description = "Cantidad de instancias Nginx en el backend pool"
+  description = "Number of Nginx instances in the backend pool"
   type        = number
   default     = 2
 }
 
 variable "prefix" {
-  description = "Prefijo para nombrar los recursos de este proyecto"
+  description = "Prefix used to name this project's resources"
   type        = string
   default     = "appgw-web"
 }
 
 variable "vm_size" {
-  description = "Tamano de la VM del webserver"
+  description = "Webserver VM size (matches the jumpbox project's choice - reliable zonal capacity in centralus)"
   type        = string
   default     = "Standard_D2s_v3"
 }
 
 variable "admin_username" {
-  description = "Usuario administrador de la VM"
+  description = "VM admin username"
   type        = string
   default     = "azureuser"
 }
 
 variable "ssh_public_key_path" {
-  description = "Ruta local a tu clave publica SSH"
+  description = "Local path to your SSH public key"
   type        = string
   default     = "~/.ssh/id_rsa.pub"
 }
 
 variable "enable_waf" {
-  description = "Si es true, despliega WAF_v2 en vez de Standard_v2"
+  description = "If true, deploys WAF_v2 instead of Standard_v2"
   type        = bool
   default     = false
 }
 
 variable "tags" {
-  description = "Tags comunes, alineados con el proyecto de red existente"
+  description = "Common tags, aligned with the existing network project"
   type        = map(string)
   default = {
     environment = "production"

@@ -1,21 +1,23 @@
-# Copia este archivo como terraform.tfvars y ajusta si es necesario.
+# Copy this file to terraform.tfvars and adjust if needed.
+# subscription_id has no default - set it via TF_VAR_subscription_id instead
+# (see README "Prerequisites").
 
-resource_group_name = "johan"
+resource_group_name = "rg-network"
 location             = "centralus"
 
 vnet_name = "vnet-ha"
 
-# Una app subnet por instancia: VM 1 -> az1, VM 2 -> az2
-app_subnet_names = ["snet-app-az1", "snet-app-az2"]
+# Single regional app subnet, shared by all instances (see azure-virtual-network).
+app_subnet_name = "snet-app"
 
 web_instance_count = 2
 
 prefix               = "appgw-web"
-vm_size              = "Standard_B1s"
+vm_size              = "Standard_D2s_v3"
 admin_username       = "azureuser"
 ssh_public_key_path  = "~/.ssh/id_rsa.pub"
 
-# Cambiar a true si queres WAF_v2 en vez de Standard_v2
+# Set to true for WAF_v2 instead of Standard_v2
 enable_waf = false
 
 tags = {
