@@ -1,6 +1,7 @@
-# 2 VMs con Nginx, una por AZ (VM 1 -> snet-app-az1, VM 2 -> snet-app-az2).
-# Cada NIC va a su respectiva app subnet via data.azurerm_subnet.app[count.index].
-# Comparten NSG "nsg-private" (existente) y NAT Gateway compartido para egress.
+# web_instance_count Nginx VMs, all in the single regional "snet-app" subnet.
+# Each VM gets an explicit "zones" argument (cycling through 1/2/3) for HA -
+# Azure subnets already span all zones, so zonal spread comes from the
+# resources deployed into the subnet, not from separate per-AZ subnets.
 
 resource "azurerm_network_interface" "web_nic" {
   count               = var.web_instance_count
@@ -11,7 +12,7 @@ resource "azurerm_network_interface" "web_nic" {
 
   ip_configuration {
     name                          = "internal"
-    subnet_id                     = data.azurerm_subnet.app[count.index].id
+    subnet_id                     = data.azurerm_subnet.app.id
     private_ip_address_allocation = "Dynamic"
   }
 }
@@ -23,7 +24,7 @@ resource "azurerm_linux_virtual_machine" "web_vm" {
   location            = var.location
   size                = var.vm_size
   admin_username      = var.admin_username
-  zone                = tostring(count.index + 1)
+  zone                = tostring((count.index % 3) + 1)
   tags                = var.tags
 
   network_interface_ids = [azurerm_network_interface.web_nic[count.index].id]
@@ -45,9 +46,9 @@ resource "azurerm_linux_virtual_machine" "web_vm" {
     version   = "latest"
   }
 
-  # El HTML deja explicito el numero de instancia y su AZ, para
-  # confirmar visualmente que el Application Gateway esta
-  # repartiendo trafico entre ambas.
+  # The HTML makes the instance number and zone explicit, to visually
+  # confirm the Application Gateway is distributing traffic across
+  # instances.
   custom_data = base64encode(<<-CLOUDINIT
     #!/bin/bash
     apt-get update -y
@@ -56,10 +57,10 @@ resource "azurerm_linux_virtual_machine" "web_vm" {
     systemctl start nginx
     cat <<HTML > /var/www/html/index.html
     <html>
-      <head><title>Instancia ${count.index + 1}</title></head>
+      <head><title>Instance ${count.index + 1}</title></head>
       <body style="font-family: sans-serif; text-align: center; margin-top: 100px;">
-        <h1>Soy la instancia ${count.index + 1}</h1>
-        <p>Availability Zone: ${count.index + 1}</p>
+        <h1>I am instance ${count.index + 1}</h1>
+        <p>Availability Zone: ${(count.index % 3) + 1}</p>
         <p>Hostname: $(hostname)</p>
       </body>
     </html>

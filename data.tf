@@ -7,18 +7,18 @@ data "azurerm_virtual_network" "main" {
   resource_group_name = var.resource_group_name
 }
 
-# Una app subnet existente por instancia: VM 1 -> snet-app-az1,
-# VM 2 -> snet-app-az2 (ver var.app_subnet_names). Todas comparten
-# el NSG "nsg-private" y el NAT Gateway compartido.
+# Single regional app subnet, shared by all webserver instances. HA comes
+# from the "zones" argument on each VM, not from one subnet per AZ - see
+# azure-virtual-network's CLAUDE.md for the reasoning. All instances share
+# the "nsg-private" NSG and the shared NAT Gateway.
 data "azurerm_subnet" "app" {
-  count                = length(var.app_subnet_names)
-  name                 = var.app_subnet_names[count.index]
+  name                 = var.app_subnet_name
   virtual_network_name = var.vnet_name
   resource_group_name  = var.resource_group_name
 }
 
-# Subnet de Application Gateway, creada en el proyecto
-# azure-virtual-network (junto con su NSG "nsg-appgw").
+# Application Gateway subnet, created in the azure-virtual-network project
+# (along with its NSG "nsg-appgw").
 data "azurerm_subnet" "appgw" {
   name                 = "snet-appgw"
   virtual_network_name = var.vnet_name
